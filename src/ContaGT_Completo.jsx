@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1078,10 +1078,9 @@ function PanelAdmin({usuario,onLogout}){
             <div style={{fontSize:36,marginBottom:12}}>{confirmacion.accion==="eliminar"?"🗑️":"⚠️"}</div>
             <h3 style={{margin:"0 0 8px",color:C.text}}>{confirmacion.accion==="eliminar"?"¿Eliminar contador?":"¿Suspender cuenta?"}</h3>
             <p style={{color:C.textMid,fontSize:13,marginBottom:24}}>
-              {confirmacion.accion==="eliminar"
-                ?`Se eliminará permanentemente la cuenta de ${confirmacion.u.nombre}.`
-                ?`Se suspenderá el acceso de ${confirmacion.u.nombre}. Podrás reactivarla después.`
-                :`Se suspenderá el acceso de ${confirmacion.u.nombre}.`}
+             {confirmacion.accion==="eliminar"
+  ?`Se eliminará permanentemente la cuenta de ${confirmacion.u.nombre}.`
+  :`Se suspenderá el acceso de ${confirmacion.u.nombre}. Podrás reactivarla después.`}
             </p>
             <div style={{display:"flex",gap:10}}>
               <Btn color={C.textMid} onClick={()=>setConfirmacion(null)} full>Cancelar</Btn>
