@@ -1,7 +1,7 @@
-import ContaGTSaaS from './ContaGT_SaaS';
+import ContaGTPro from './ContaGT_Completo';
 
 function App() {
-  return <ContaGTSaaS />;
+  return <ContaGTPro />;
 }
 
 export default App;
