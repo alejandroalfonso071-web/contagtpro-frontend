@@ -859,20 +859,47 @@ function PantallaLogin({onLogin}){
   const [error,setError]=useState("");
 
   const handleLogin=async()=>{
-    setError("");setLoading(true);
-    await new Promise(r=>setTimeout(r,800));
-    if(email==="admin@contagtpro.gt"&&password==="admin123"){onLogin({id:"0",nombre:"Carlos Méndez",email,plan:"ilimitado",rol:"admin",colegiado:"7821"});}
-    else if(email&&password.length>=4){onLogin({id:Date.now().toString(),nombre:nombre||email.split("@")[0],email,plan,rol:"contador",colegiado:colegiado||"0000"});}
-    else{setError("Credenciales incorrectas.");}
-    setLoading(false);
-  };
+  setError("");setLoading(true);
+  try{
+    const res=await fetch(`${process.env.REACT_APP_API_URL}/api/auth/login`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email,password})
+    });
+    const data=await res.json();
+    if(data.ok){
+      localStorage.setItem("token",data.token);
+      onLogin(data.usuario);
+    }else{
+      setError(data.error||"Credenciales incorrectas");
+    }
+  }catch(e){
+    setError("Error de conexión. Intenta de nuevo.");
+  }
+  setLoading(false);
+};
 
   const handleRegistro=async()=>{
-    if(!nombre||!email||!password){setError("Completa todos los campos");return;}
-    setLoading(true);await new Promise(r=>setTimeout(r,1000));
-    onLogin({id:Date.now().toString(),nombre,email,plan,rol:"contador",colegiado:colegiado||"0000"});
-    setLoading(false);
-  };
+  if(!nombre||!email||!password){setError("Completa todos los campos");return;}
+  setLoading(true);
+  try{
+    const res=await fetch(`${process.env.REACT_APP_API_URL}/api/auth/registro`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({nombre,email,password,colegiado,plan})
+    });
+    const data=await res.json();
+    if(data.ok){
+      localStorage.setItem("token",data.token);
+      onLogin(data.usuario);
+    }else{
+      setError(data.error||"Error al crear cuenta");
+    }
+  }catch(e){
+    setError("Error de conexión. Intenta de nuevo.");
+  }
+  setLoading(false);
+};
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
