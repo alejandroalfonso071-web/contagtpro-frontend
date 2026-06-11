@@ -142,7 +142,123 @@ function DropZone({label,icon,color,count,loading,onFile}){
 // ══════════════════════════════════════════════════════════════════════════════
 // SISTEMA CONTABLE (módulo por cliente)
 // ══════════════════════════════════════════════════════════════════════════════
-function SistemaContable({cliente,onVolver}){
+function HistorialDeclaraciones({cliente,token,apiKey,apiUrl}){
+  const [declaraciones,setDeclaraciones]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filtroTipo,setFiltroTipo]=useState("TODOS");
+  const MESES_H=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  useEffect(()=>{
+    const cargar=async()=>{
+      setLoading(true);
+      try{
+        const res=await fetch(`${apiUrl}/api/clientes/${cliente.id}/declaraciones`,{
+          headers:{"X-API-Key":apiKey,"Authorization":`Bearer ${token}`}
+        });
+        const data=await res.json();
+        if(data.ok) setDeclaraciones(data.declaraciones);
+      }catch(e){console.error(e);}
+      setLoading(false);
+    };
+    cargar();
+  },[cliente.id,token,apiKey,apiUrl]);
+
+  const filtradas=filtroTipo==="TODOS"?declaraciones:declaraciones.filter(d=>d.tipo===filtroTipo);
+  const totalPagado=declaraciones.reduce((s,d)=>s+parseFloat(d.iva_pagar||0)+parseFloat(d.isr_neto||0)+parseFloat(d.iso_neto||0),0);
+
+  const tipoColor={IVA:C.accent,ISR:C.gold,ISO:C.blue};
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <h2 style={{fontWeight:800,fontSize:20,margin:0}}>Historial de Declaraciones</h2>
+          <p style={{color:C.textMid,margin:"4px 0 0",fontSize:13}}>{cliente.nombre} — {declaraciones.length} declaraciones certificadas</p>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          {["TODOS","IVA","ISR","ISO"].map(t=>(
+            <Btn key={t} size="sm" color={filtroTipo===t?tipoColor[t]||C.accent:C.textDim}
+              onClick={()=>setFiltroTipo(t)}>{t}</Btn>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
+        <div style={{padding:"14px 18px",background:C.accentDim,border:`1px solid ${C.accentSoft}`,borderRadius:12}}>
+          <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>Total Declaraciones</div>
+          <div style={{fontSize:24,fontWeight:800,color:C.accent,fontFamily:"monospace"}}>{declaraciones.length}</div>
+        </div>
+        <div style={{padding:"14px 18px",background:C.accentDim,border:`1px solid ${C.accentSoft}`,borderRadius:12}}>
+          <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>IVA Total Pagado</div>
+          <div style={{fontSize:18,fontWeight:800,color:C.accent,fontFamily:"monospace"}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.iva_pagar||0),0))}</div>
+        </div>
+        <div style={{padding:"14px 18px",background:C.goldDim,border:`1px solid ${C.gold}30`,borderRadius:12}}>
+          <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>ISR Total Pagado</div>
+          <div style={{fontSize:18,fontWeight:800,color:C.gold,fontFamily:"monospace"}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.isr_neto||0),0))}</div>
+        </div>
+        <div style={{padding:"14px 18px",background:C.blueDim,border:`1px solid ${C.blue}30`,borderRadius:12}}>
+          <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>ISO Total Pagado</div>
+          <div style={{fontSize:18,fontWeight:800,color:C.blue,fontFamily:"monospace"}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.iso_neto||0),0))}</div>
+        </div>
+      </div>
+
+      {loading?(
+        <Card style={{textAlign:"center",padding:40}}><div style={{color:C.textMid}}>Cargando historial...</div></Card>
+      ):filtradas.length===0?(
+        <Card style={{textAlign:"center",padding:40,borderStyle:"dashed"}}>
+          <div style={{fontSize:36,marginBottom:12}}>📅</div>
+          <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Sin declaraciones certificadas</div>
+          <div style={{color:C.textMid,fontSize:13}}>Las declaraciones aparecerán aquí después de certificarlas</div>
+        </Card>
+      ):(
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:C.surface}}>
+                {["Tipo","Período","Ventas","Compras","IVA Pagado","ISR Neto","ISO Neto","Remanente CF","Certificado","Estado"].map(h=>(
+                  <th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:10,color:C.textDim,letterSpacing:0.5,borderBottom:`1px solid ${C.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtradas.map((d,i)=>(
+                <tr key={d.id} style={{borderBottom:`1px solid ${C.border}20`,background:i%2===0?"transparent":C.surface+"40"}}>
+                  <td style={{padding:"10px 14px"}}>
+                    <Pill color={tipoColor[d.tipo]||C.accent}>{d.tipo}</Pill>
+                  </td>
+                  <td style={{padding:"10px 14px",fontWeight:600,color:C.text}}>
+                    {d.mes!=null?`${MESES_H[d.mes]} ${d.anio}`:d.trimestre?`T${d.trimestre} ${d.anio}`:`${d.anio}`}
+                  </td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12}}>{fmtQ(d.base_ventas)}</td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12}}>{fmtQ(d.base_compras)}</td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:700,color:parseFloat(d.iva_pagar)>0?C.red:C.accent}}>{fmtQ(d.iva_pagar)}</td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",color:C.gold}}>{fmtQ(d.isr_neto)}</td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",color:C.blue}}>{fmtQ(d.iso_neto)}</td>
+                  <td style={{padding:"10px 14px",fontFamily:"monospace",color:parseFloat(d.remanente_cf)>0?C.gold:C.textDim}}>{fmtQ(d.remanente_cf)}</td>
+                  <td style={{padding:"10px 14px",fontSize:11,color:C.textMid}}>{d.certificado_por||"—"}</td>
+                  <td style={{padding:"10px 14px"}}><Pill color={C.accent}>✓ CERTIFICADA</Pill></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{background:C.surface}}>
+                <td colSpan={4} style={{padding:"10px 14px",fontWeight:800,color:C.text,fontSize:12}}>TOTALES</td>
+                <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:800,color:C.accent}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.iva_pagar||0),0))}</td>
+                <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:800,color:C.gold}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.isr_neto||0),0))}</td>
+                <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:800,color:C.blue}}>{fmtQ(declaraciones.reduce((s,d)=>s+parseFloat(d.iso_neto||0),0))}</td>
+                <td colSpan={3}/>
+              </tr>
+            </tfoot>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+function SistemaContable({cliente,onVolver,token,apiKey,apiUrl}){
+  const API_URL_SC=apiUrl||API_URL;
+  const API_KEY_SC=apiKey||API_KEY;
+  const headers_sc={"Content-Type":"application/json","X-API-Key":API_KEY_SC,"Authorization":`Bearer ${token}`};
   const [tab,setTab]=useState("dashboard");
   const [compras,setCompras]=useState([]);
   const [ventas,setVentas]=useState([]);
@@ -219,8 +335,30 @@ function SistemaContable({cliente,onVolver}){
     setLoading("");
   },[]);
 
-  const certificar=()=>{setCertified(true);setCertDate(today());alert(`✅ Declaración certificada el ${today()}`);};
-
+  const certificar=async(tipo)=>{
+    const t=tipo||"IVA";
+    const datos={
+      tipo:t, mes:periodo.mes, anio:periodo.anio,
+      trimestre:Math.ceil((periodo.mes+1)/3),
+      base_ventas:totV.base, iva_ventas:totV.iva,
+      base_compras:totC.base, iva_compras:totC.iva,
+      remanente_anterior:parseFloat(remanenteAnterior||0),
+      remanente_cf:ivaCF, retenciones_iva:retencionesIVA,
+      retenciones_isr:retencionesISR, iva_pagar:ivaAPagar,
+      isr_determinado:isrBruto, isr_pagado:isrPagadoAcumulado,
+      isr_neto:isr, iso_determinado:isoDeterminado,
+      iso_pagado:isoPagadoTrim, iso_neto:isoAPagar,
+      utilidad, certificado_por:"Contador",
+    };
+    try{
+      await fetch(`${API_URL_SC}/api/clientes/${cliente.id}/declaraciones`,{
+        method:"POST", headers:headers_sc, body:JSON.stringify(datos)
+      });
+    }catch(e){console.error("Error guardando declaración:",e);}
+    setCertified(true);
+    setCertDate(today());
+    alert(`✅ Declaración ${t} certificada y guardada en historial el ${today()}`);
+  };
   const consultarNIT=async()=>{
     if(!nitConsulta.trim())return;
     setNitLoading(true);setNitResult(null);
@@ -288,6 +426,7 @@ function SistemaContable({cliente,onVolver}){
     {id:"isr",label:"ISR SAT-1361",icon:"📊"},
     {id:"iso",label:"ISO SAT-2800",icon:"📈"},
     {id:"sat",label:"Consultas SAT",icon:"🔗"},
+   {id:"historial",label:"Historial",icon:"📅"},
     {id:"asistente",label:"Asistente IA",icon:"🤖"},
   ];
 
@@ -604,7 +743,7 @@ function SistemaContable({cliente,onVolver}){
                 <div style={{marginTop:14,padding:12,background:C.goldDim,border:`1px solid ${C.gold}40`,borderRadius:8,fontSize:12,color:C.textMid}}>
                   📌 Remanente para el próximo mes: <b style={{color:C.gold}}>{fmtQ(ivaCF>0?ivaCF:0)}</b> — Ingresa este valor en "Remanente mes anterior" de {MESES[periodo.mes===11?0:periodo.mes+1]}.
                 </div>
-                <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("IVA")}/>
+                <CertSection certified={certified} certDate={certDate} onCertify={()=>certificar("IVA")} onDescargar={()=>descargarFlat("IVA")}/>
               </Card>
             </div>
           )}
@@ -662,7 +801,7 @@ function SistemaContable({cliente,onVolver}){
                   <FormField label="Retenciones ISR Recibidas" value={fmt(retencionesISR)} highlight={C.purple}/>
                   <FormField label="ISR NETO A PAGAR" value={fmt(isr)} highlight={C.red} big/>
                 </div>
-                <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("ISR")}/>
+               <CertSection certified={certified} certDate={certDate} onCertify={()=>certificar("ISR")} onDescargar={()=>descargarFlat("ISR")}/>
               </Card>
             </div>
           )}
@@ -718,7 +857,7 @@ function SistemaContable({cliente,onVolver}){
                   <FormField label="ISO YA PAGADO (este trimestre)" value={fmt(isoPagadoTrim)} highlight={C.blue}/>
                   <FormField label="ISO A PAGAR" value={fmt(isoAPagar)} highlight={isoAPagar>0?C.red:C.accent} big/>
                 </div>
-                <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("ISO")}/>
+                <CertSection certified={certified} certDate={certDate} onCertify={()=>certificar("ISO")} onDescargar={()=>descargarFlat("ISO")}/>
               </Card>
             </div>
           )}
@@ -781,6 +920,9 @@ function SistemaContable({cliente,onVolver}){
           )}
 
           {/* ASISTENTE */}
+{tab==="historial"&&(
+            <HistorialDeclaraciones cliente={cliente} token={token} apiKey={API_KEY_SC} apiUrl={API_URL_SC}/>
+          )}
           {tab==="asistente"&&(
             <div>
               <h2 style={{fontWeight:800,fontSize:20,marginBottom:4}}>Asistente Tributario IA</h2>
@@ -905,24 +1047,45 @@ function CertSection({certified,certDate,onCertify,onDescargar}){
 // ══════════════════════════════════════════════════════════════════════════════
 function PanelContador({usuario,onLogout}){
   const [clientes,setClientes]=useState([]);
-  const [clienteActivo,setClienteActivo]=useState(null);
+  const [cargandoClientes,setCargandoClientes]=useState(true);
+  const token=localStorage.getItem("token");
+  const headers={"Content-Type":"application/json","X-API-Key":API_KEY,"Authorization":`Bearer ${token}`};
+
+  const cargarClientes=useCallback(async()=>{
+    setCargandoClientes(true);
+    try{
+      const res=await fetch(`${API_URL}/api/clientes`,{headers});
+      const data=await res.json();
+      if(data.ok) setClientes(data.clientes);
+    }catch(e){console.error(e);}
+    setCargandoClientes(false);
+  },[]);
+
+  useEffect(()=>{cargarClientes();},[cargarClientes]);  const [clienteActivo,setClienteActivo]=useState(null);
   const [mostrarModal,setMostrarModal]=useState(false);
   const [nuevoCliente,setNuevoCliente]=useState({nombre:"",nit:"",regimen:"general",sector:""});
   const plan=PLANES[usuario.plan]||PLANES.basico;
 
-  const eliminarCliente=(id)=>{
-    if(window.confirm("¿Eliminar esta empresa del sistema?"))
-      setClientes(cs=>cs.filter(c=>c.id!==id));
+ const eliminarCliente=async(id)=>{
+    if(!window.confirm("¿Eliminar esta empresa del sistema?")) return;
+    try{
+      await fetch(`${API_URL}/api/clientes/${id}`,{method:"DELETE",headers});
+      cargarClientes();
+    }catch(e){alert("Error al eliminar");}
   };
 
-  const agregarCliente=()=>{
+  const agregarCliente=async()=>{
     if(!nuevoCliente.nombre||!nuevoCliente.nit){alert("Nombre y NIT son requeridos");return;}
-    setClientes(cs=>[...cs,{id:`c${Date.now()}`,declaracionesPendientes:0,ultimaDeclaracion:"—",...nuevoCliente}]);
-    setNuevoCliente({nombre:"",nit:"",regimen:"general",sector:""});
-    setMostrarModal(false);
+    try{
+      const res=await fetch(`${API_URL}/api/clientes`,{method:"POST",headers,body:JSON.stringify(nuevoCliente)});
+      const data=await res.json();
+      if(data.ok){cargarClientes();setNuevoCliente({nombre:"",nit:"",regimen:"general",sector:""});setMostrarModal(false);}
+      else alert(data.error||"Error al agregar cliente");
+    }catch(e){alert("Error de conexión");}
   };
+   
 
-  if(clienteActivo) return <SistemaContable cliente={clienteActivo} onVolver={()=>setClienteActivo(null)}/>;
+ if(clienteActivo) return <SistemaContable cliente={clienteActivo} onVolver={()=>{setClienteActivo(null);cargarClientes();}} token={token} apiKey={API_KEY} apiUrl={API_URL}/>;
 
   const usoPct=Math.round(clientes.length/plan.limiteClientes*100);
 
