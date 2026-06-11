@@ -161,13 +161,56 @@ function SistemaContable({cliente,onVolver}){
   const [felResult,setFelResult]=useState(null);
   const chatRef=useRef(null);
 
+  // ── REMANENTE Y RETENCIONES ──────────────────────────────────────────────────
+  const [remanenteAnterior,setRemanenteAnterior]=useState(0);
+  const [retenciones,setRetenciones]=useState([]);
+  const [modalRetencion,setModalRetencion]=useState(false);
+  const [nuevaRetencion,setNuevaRetencion]=useState({tipo:"IVA",numero_recibo:"",agente_retenedor:"",nit_agente:"",base_retencion:"",monto_retenido:"",fecha:today()});
+
+  // ── ISR TRIMESTRAL ───────────────────────────────────────────────────────────
+  const [pagosISR,setPagosISR]=useState([
+    {trimestre:1,pagado:0,numero_declaracion:"",fecha_pago:""},
+    {trimestre:2,pagado:0,numero_declaracion:"",fecha_pago:""},
+    {trimestre:3,pagado:0,numero_declaracion:"",fecha_pago:""},
+    {trimestre:4,pagado:0,numero_declaracion:"",fecha_pago:""},
+  ]);
+
+  // ── ISO TRIMESTRAL ───────────────────────────────────────────────────────────
+  const [pagosISO,setPagosISO]=useState([
+    {trimestre:1,pagado:0,numero_declaracion:"",fecha_pago:"",ingresos_trimestre:0},
+    {trimestre:2,pagado:0,numero_declaracion:"",fecha_pago:"",ingresos_trimestre:0},
+    {trimestre:3,pagado:0,numero_declaracion:"",fecha_pago:"",ingresos_trimestre:0},
+    {trimestre:4,pagado:0,numero_declaracion:"",fecha_pago:"",ingresos_trimestre:0},
+  ]);
+
   const totC={base:compras.reduce((s,r)=>s+r.base,0),iva:compras.reduce((s,r)=>s+r.iva,0),total:compras.reduce((s,r)=>s+r.total,0)};
   const totV={base:ventas.reduce((s,r)=>s+r.base,0),iva:ventas.reduce((s,r)=>s+r.iva,0),total:ventas.reduce((s,r)=>s+r.total,0)};
-  const ivaAPagar=Math.max(0,totV.iva-totC.iva);
-  const ivaCF=Math.max(0,totC.iva-totV.iva);
+
+  // Retenciones del período actual
+  const retencionesIVA=retenciones.filter(r=>r.tipo==="IVA").reduce((s,r)=>s+parseFloat(r.monto_retenido||0),0);
+  const retencionesISR=retenciones.filter(r=>r.tipo==="ISR").reduce((s,r)=>s+parseFloat(r.monto_retenido||0),0);
+
+  // IVA con remanente anterior y retenciones
+  const debitoFiscal=totV.iva;
+  const creditoFiscal=totC.iva+parseFloat(remanenteAnterior||0)+retencionesIVA;
+  const diferencia=debitoFiscal-creditoFiscal;
+  const ivaAPagar=Math.max(0,diferencia);
+  const ivaCF=Math.max(0,-diferencia);
+
+  // ISR
   const utilidad=totV.base-totC.base;
-  const isr=Math.max(0,utilidad*0.25);
-  const iso=totV.total*0.01;
+  const isrBruto=Math.max(0,utilidad*0.25);
+  const isrPagadoAcumulado=pagosISR.reduce((s,p)=>s+parseFloat(p.pagado||0),0);
+  const isr=Math.max(0,isrBruto-isrPagadoAcumulado-retencionesISR);
+
+  // ISO
+  const trimActual=Math.ceil((periodo.mes+1)/3);
+  const isoTrimActual=pagosISO.find(p=>p.trimestre===trimActual)||{};
+  const ingresosTrim=parseFloat(isoTrimActual.ingresos_trimestre||totV.total);
+  const isoDeterminado=ingresosTrim*0.01;
+  const isoPagadoTrim=parseFloat(isoTrimActual.pagado||0);
+  const isoAPagar=Math.max(0,isoDeterminado-isoPagadoTrim);
+  const iso=isoDeterminado;
 
   const handleFile=useCallback(async(file,tipo)=>{
     setLoading(tipo);
@@ -239,10 +282,11 @@ function SistemaContable({cliente,onVolver}){
   const TABS=[
     {id:"dashboard",label:"Resumen",icon:"⬡"},
     {id:"carga",label:"Cargar Datos",icon:"📂"},
+    {id:"retenciones",label:"Retenciones",icon:"🔖"},
     {id:"libros",label:"Libros",icon:"📚"},
-    {id:"iva",label:"IVA",icon:"📋"},
-    {id:"isr",label:"ISR",icon:"📊"},
-    {id:"iso",label:"ISO",icon:"📈"},
+    {id:"iva",label:"IVA SAT-2237",icon:"📋"},
+    {id:"isr",label:"ISR SAT-1361",icon:"📊"},
+    {id:"iso",label:"ISO SAT-2800",icon:"📈"},
     {id:"sat",label:"Consultas SAT",icon:"🔗"},
     {id:"asistente",label:"Asistente IA",icon:"🤖"},
   ];
@@ -297,41 +341,79 @@ function SistemaContable({cliente,onVolver}){
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
                 <Stat label="Total Ventas" value={fmtQ(totV.total)} color={C.accent} icon="📤" sub={`Base: ${fmtQ(totV.base)}`}/>
                 <Stat label="Total Compras" value={fmtQ(totC.total)} color={C.blue} icon="📥" sub={`Base: ${fmtQ(totC.base)}`}/>
-                <Stat label="IVA a Pagar" value={fmtQ(ivaAPagar)} color={ivaCF>0?C.gold:C.red} icon="📋" sub={ivaCF>0?`CF: ${fmtQ(ivaCF)}`:"SAT-1311"}/>
-                <Stat label="ISR Estimado" value={fmtQ(isr)} color={C.gold} icon="📊" sub={`ISO: ${fmtQ(iso)}`}/>
+                <Stat label="IVA a Pagar" value={fmtQ(ivaAPagar)} color={ivaCF>0?C.gold:C.red} icon="📋" sub={ivaCF>0?`CF: ${fmtQ(ivaCF)}`:"SAT-2237"}/>
+                <Stat label="ISR Neto" value={fmtQ(isr)} color={C.gold} icon="📊" sub={`ISO: ${fmtQ(isoAPagar)}`}/>
               </div>
+
+              {/* Remanente CF anterior */}
+              <Card style={{marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.gold,marginBottom:12}}>🔄 Remanente de Crédito Fiscal</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,alignItems:"end"}}>
+                  <div>
+                    <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>Remanente mes anterior (Q)</label>
+                    <input type="number" value={remanenteAnterior} onChange={e=>setRemanenteAnterior(parseFloat(e.target.value)||0)}
+                      style={{width:"100%",background:C.surface,border:`1px solid ${C.gold}50`,color:C.gold,borderRadius:8,padding:"10px 14px",fontSize:16,fontWeight:700,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:10,color:C.textDim,marginTop:4}}>Copia el remanente CF del mes anterior</div>
+                  </div>
+                  <div style={{padding:"14px 18px",background:C.accentDim,border:`1px solid ${C.accentSoft}`,borderRadius:10}}>
+                    <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>Crédito Fiscal Total</div>
+                    <div style={{fontSize:20,fontWeight:800,color:C.accent,fontFamily:"monospace"}}>{fmtQ(creditoFiscal)}</div>
+                    <div style={{fontSize:10,color:C.textDim,marginTop:4}}>Compras + Remanente + Retenciones IVA</div>
+                  </div>
+                  <div style={{padding:"14px 18px",background:ivaCF>0?C.goldDim:C.redDim,border:`1px solid ${ivaCF>0?C.gold:C.red}40`,borderRadius:10}}>
+                    <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>{ivaCF>0?"Remanente para mes siguiente":"IVA a pagar este mes"}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:ivaCF>0?C.gold:C.red,fontFamily:"monospace"}}>{fmtQ(ivaCF>0?ivaCF:ivaAPagar)}</div>
+                  </div>
+                </div>
+              </Card>
+
               {compras.length===0&&ventas.length===0?(
                 <Card style={{textAlign:"center",padding:40,borderStyle:"dashed"}}>
                   <div style={{fontSize:40,marginBottom:12}}>📂</div>
                   <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>Sin datos para {cliente.nombre}</div>
-                  <div style={{color:C.textMid,marginBottom:16,fontSize:13}}>Sube los archivos Excel o CSV de compras y ventas de este cliente</div>
+                  <div style={{color:C.textMid,marginBottom:16,fontSize:13}}>Sube los archivos Excel o CSV de compras y ventas</div>
                   <Btn onClick={()=>setTab("carga")} icon="📂">Cargar Archivos</Btn>
                 </Card>
               ):(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                   <Card>
-                    <div style={{fontWeight:700,marginBottom:14,fontSize:13,color:C.accent}}>📋 Resumen IVA</div>
-                    {[["Débito Fiscal",totV.iva,C.accent],["Crédito Fiscal",totC.iva,C.blue],[ivaAPagar>0?"IVA a Pagar":"Remanente CF",ivaAPagar>0?ivaAPagar:ivaCF,ivaAPagar>0?C.red:C.gold]].map(([l,v,c])=>(
-                      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.textMid,fontSize:13}}>{l}</span>
-                        <span style={{color:c,fontWeight:700,fontFamily:"monospace"}}>{fmtQ(v)}</span>
+                    <div style={{fontWeight:700,marginBottom:14,fontSize:13,color:C.accent}}>📋 Resumen IVA — SAT-2237</div>
+                    {[
+                      ["Débito Fiscal (ventas)",debitoFiscal,C.accent],
+                      ["Crédito Fiscal (compras)",totC.iva,C.blue],
+                      ["Remanente anterior",parseFloat(remanenteAnterior||0),C.gold],
+                      ["Retenciones IVA",retencionesIVA,C.purple],
+                      ["Total Crédito",creditoFiscal,C.blue],
+                      [ivaAPagar>0?"IVA A PAGAR":"REMANENTE CF",ivaAPagar>0?ivaAPagar:ivaCF,ivaAPagar>0?C.red:C.gold],
+                    ].map(([l,v,c])=>(
+                      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.textMid,fontSize:12}}>{l}</span>
+                        <span style={{color:c,fontWeight:700,fontFamily:"monospace",fontSize:13}}>{fmtQ(v)}</span>
                       </div>
                     ))}
-                    <div style={{marginTop:14,display:"flex",gap:8}}>
-                      <Btn onClick={()=>descargarFlat("IVA")} color={C.accent} size="sm" icon="⬇">SAT-1311.txt</Btn>
+                    <div style={{marginTop:14}}>
+                      <Btn onClick={()=>setTab("iva")} color={C.accent} size="sm" icon="📋">Ver Formulario SAT-2237</Btn>
                     </div>
                   </Card>
                   <Card>
                     <div style={{fontWeight:700,marginBottom:14,fontSize:13,color:C.gold}}>💼 ISR / ISO</div>
-                    {[["Ingresos",totV.total,C.accent],["Costos",totC.total,C.blue],["Utilidad",utilidad,utilidad>=0?C.accent:C.red],["ISR (25%)",isr,C.gold],["ISO (1%)",iso,C.blue]].map(([l,v,c])=>(
+                    {[
+                      ["Ingresos gravados",totV.base,C.accent],
+                      ["Costos deducibles",totC.base,C.blue],
+                      ["Utilidad",utilidad,utilidad>=0?C.accent:C.red],
+                      ["ISR bruto (25%)",isrBruto,C.gold],
+                      ["ISR pagado trimestralmente",isrPagadoAcumulado,C.blue],
+                      ["Retenciones ISR",retencionesISR,C.purple],
+                      ["ISR NETO A PAGAR",isr,C.red],
+                    ].map(([l,v,c])=>(
                       <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.textMid,fontSize:13}}>{l}</span>
-                        <span style={{color:c,fontWeight:700,fontFamily:"monospace"}}>{fmtQ(v)}</span>
+                        <span style={{color:C.textMid,fontSize:12}}>{l}</span>
+                        <span style={{color:c,fontWeight:700,fontFamily:"monospace",fontSize:13}}>{fmtQ(v)}</span>
                       </div>
                     ))}
                     <div style={{marginTop:14,display:"flex",gap:8}}>
-                      <Btn onClick={()=>descargarFlat("ISR")} color={C.gold} size="sm" icon="⬇">SAT-1361.txt</Btn>
-                      <Btn onClick={()=>descargarFlat("ISO")} color={C.blue} size="sm" icon="⬇">SAT-2800.txt</Btn>
+                      <Btn onClick={()=>setTab("isr")} color={C.gold} size="sm" icon="📊">Ver ISR</Btn>
+                      <Btn onClick={()=>setTab("iso")} color={C.blue} size="sm" icon="📈">Ver ISO</Btn>
                     </div>
                   </Card>
                 </div>
@@ -368,6 +450,113 @@ function SistemaContable({cliente,onVolver}){
             </div>
           )}
 
+          {/* RETENCIONES */}
+          {tab==="retenciones"&&(
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                <div>
+                  <h2 style={{fontWeight:800,fontSize:20,margin:0}}>Retenciones — {MESES[periodo.mes]} {periodo.anio}</h2>
+                  <p style={{color:C.textMid,margin:"4px 0 0",fontSize:13}}>Registra los recibos de retención de IVA e ISR</p>
+                </div>
+                <Btn onClick={()=>setModalRetencion(true)} color={C.accent} icon="+">Agregar Retención</Btn>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:20}}>
+                <div style={{padding:"16px 20px",background:C.accentDim,border:`1px solid ${C.accentSoft}`,borderRadius:12}}>
+                  <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>Total Retenciones IVA</div>
+                  <div style={{fontSize:24,fontWeight:800,color:C.accent,fontFamily:"monospace"}}>{fmtQ(retencionesIVA)}</div>
+                  <div style={{fontSize:11,color:C.textDim,marginTop:4}}>{retenciones.filter(r=>r.tipo==="IVA").length} recibo(s)</div>
+                </div>
+                <div style={{padding:"16px 20px",background:C.goldDim,border:`1px solid ${C.gold}30`,borderRadius:12}}>
+                  <div style={{fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:4}}>Total Retenciones ISR</div>
+                  <div style={{fontSize:24,fontWeight:800,color:C.gold,fontFamily:"monospace"}}>{fmtQ(retencionesISR)}</div>
+                  <div style={{fontSize:11,color:C.textDim,marginTop:4}}>{retenciones.filter(r=>r.tipo==="ISR").length} recibo(s)</div>
+                </div>
+              </div>
+
+              <Card style={{padding:0,overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:C.surface}}>
+                      {["Tipo","No. Recibo","Agente Retenedor","NIT Agente","Base","Monto Retenido","Fecha",""].map(h=>(
+                        <th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:10,color:C.textDim,letterSpacing:0.5,borderBottom:`1px solid ${C.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {retenciones.length===0?(
+                      <tr><td colSpan={8} style={{textAlign:"center",padding:32,color:C.textDim}}>Sin retenciones registradas para este período</td></tr>
+                    ):retenciones.map((r,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${C.border}20`,background:i%2===0?"transparent":C.surface+"40"}}>
+                        <td style={{padding:"10px 14px"}}><Pill color={r.tipo==="IVA"?C.accent:C.gold}>{r.tipo}</Pill></td>
+                        <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12}}>{r.numero_recibo||"—"}</td>
+                        <td style={{padding:"10px 14px",fontSize:12}}>{r.agente_retenedor}</td>
+                        <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12}}>{r.nit_agente||"—"}</td>
+                        <td style={{padding:"10px 14px",fontFamily:"monospace"}}>{fmtQ(r.base_retencion)}</td>
+                        <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:700,color:r.tipo==="IVA"?C.accent:C.gold}}>{fmtQ(r.monto_retenido)}</td>
+                        <td style={{padding:"10px 14px",fontSize:12,color:C.textMid}}>{r.fecha}</td>
+                        <td style={{padding:"10px 14px"}}>
+                          <Btn size="sm" color={C.red} onClick={()=>setRetenciones(rs=>rs.filter((_,j)=>j!==i))}>🗑</Btn>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {retenciones.length>0&&(
+                    <tfoot>
+                      <tr style={{background:C.surface}}>
+                        <td colSpan={5} style={{padding:"10px 14px",fontWeight:700,color:C.text,fontSize:12}}>TOTAL RETENCIONES</td>
+                        <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:800,color:C.accent}}>{fmtQ(retencionesIVA+retencionesISR)}</td>
+                        <td colSpan={2}/>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </Card>
+
+              {/* Modal agregar retención */}
+              {modalRetencion&&(
+                <div style={{position:"fixed",inset:0,background:"#00000088",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:32,width:500}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                      <h3 style={{margin:0,fontSize:17,fontWeight:800}}>Agregar Retención</h3>
+                      <button onClick={()=>setModalRetencion(false)} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer"}}>✕</button>
+                    </div>
+                    <div style={{marginBottom:14}}>
+                      <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>Tipo de Retención</label>
+                      <div style={{display:"flex",gap:10}}>
+                        {["IVA","ISR"].map(t=>(
+                          <button key={t} onClick={()=>setNuevaRetencion(n=>({...n,tipo:t}))}
+                            style={{flex:1,padding:"10px",background:nuevaRetencion.tipo===t?(t==="IVA"?C.accent:C.gold)+"20":C.surface,border:`2px solid ${nuevaRetencion.tipo===t?(t==="IVA"?C.accent:C.gold):C.border}`,borderRadius:9,cursor:"pointer",fontWeight:700,fontSize:14,color:nuevaRetencion.tipo===t?(t==="IVA"?C.accent:C.gold):C.textMid,fontFamily:"inherit"}}>
+                            Retención {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                      <Input label="No. Recibo de Retención" value={nuevaRetencion.numero_recibo} onChange={v=>setNuevaRetencion(n=>({...n,numero_recibo:v}))} placeholder="RET-00001" mono/>
+                      <Input label="NIT del Agente Retenedor" value={nuevaRetencion.nit_agente} onChange={v=>setNuevaRetencion(n=>({...n,nit_agente:v}))} placeholder="1234567-8" mono/>
+                    </div>
+                    <Input label="Nombre del Agente Retenedor" value={nuevaRetencion.agente_retenedor} onChange={v=>setNuevaRetencion(n=>({...n,agente_retenedor:v}))} placeholder="Ej: Walmart Guatemala S.A." icon="🏢"/>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                      <Input label="Base de Retención (Q)" value={nuevaRetencion.base_retencion} onChange={v=>setNuevaRetencion(n=>({...n,base_retencion:v}))} placeholder="0.00" mono/>
+                      <Input label="Monto Retenido (Q)" value={nuevaRetencion.monto_retenido} onChange={v=>setNuevaRetencion(n=>({...n,monto_retenido:v}))} placeholder="0.00" mono/>
+                      <Input label="Fecha" value={nuevaRetencion.fecha} onChange={v=>setNuevaRetencion(n=>({...n,fecha:v}))} placeholder="DD/MM/AAAA"/>
+                    </div>
+                    <div style={{display:"flex",gap:10,marginTop:8}}>
+                      <Btn onClick={()=>setModalRetencion(false)} color={C.textMid} full>Cancelar</Btn>
+                      <Btn onClick={()=>{
+                        if(!nuevaRetencion.agente_retenedor||!nuevaRetencion.monto_retenido){alert("Agente retenedor y monto son requeridos");return;}
+                        setRetenciones(rs=>[...rs,{...nuevaRetencion,base_retencion:parseFloat(nuevaRetencion.base_retencion)||0,monto_retenido:parseFloat(nuevaRetencion.monto_retenido)||0}]);
+                        setNuevaRetencion({tipo:"IVA",numero_recibo:"",agente_retenedor:"",nit_agente:"",base_retencion:"",monto_retenido:"",fecha:today()});
+                        setModalRetencion(false);
+                      }} color={C.accent} full icon="✓">Agregar Retención</Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* LIBROS */}
           {tab==="libros"&&(
             <div>
@@ -381,10 +570,10 @@ function SistemaContable({cliente,onVolver}){
           {/* IVA */}
           {tab==="iva"&&(
             <div>
-              <h2 style={{fontWeight:800,fontSize:20,marginBottom:4}}>Formulario IVA — SAT-1311</h2>
-              <p style={{color:C.textMid,marginBottom:20,fontSize:13}}>Declaración Mensual — {MESES[periodo.mes]} {periodo.anio}</p>
+              <h2 style={{fontWeight:800,fontSize:20,marginBottom:4}}>Formulario IVA — SAT-2237</h2>
+              <p style={{color:C.textMid,marginBottom:20,fontSize:13}}>Declaración Mensual del IVA — {MESES[periodo.mes]} {periodo.anio}</p>
               <Card>
-                <SatHeader titulo="DECLARACIÓN JURADA DEL IMPUESTO AL VALOR AGREGADO" form="SAT-1311"/>
+                <SatHeader titulo="DECLARACIÓN MENSUAL DEL IMPUESTO AL VALOR AGREGADO" form="SAT-2237"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
                   <FormField label="NIT" value={cliente.nit}/>
                   <FormField label="Razón Social" value={cliente.nombre}/>
@@ -392,20 +581,28 @@ function SistemaContable({cliente,onVolver}){
                 </div>
                 <Divider label="DÉBITO FISCAL"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <FormField label="Base Ventas Gravadas" value={fmt(totV.base)} highlight={C.accent}/>
-                  <FormField label="Débito Fiscal (IVA 12%)" value={fmt(totV.iva)} highlight={C.accent}/>
+                  <FormField label="Ventas Gravadas — Base Imponible" value={fmt(totV.base)} highlight={C.accent}/>
+                  <FormField label="Débito Fiscal (12%)" value={fmt(debitoFiscal)} highlight={C.accent}/>
+                  <FormField label="Ventas Exentas" value="0.00"/>
+                  <FormField label="Exportaciones" value="0.00"/>
                 </div>
                 <Divider label="CRÉDITO FISCAL"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <FormField label="Base Compras Gravadas" value={fmt(totC.base)} highlight={C.blue}/>
-                  <FormField label="Crédito Fiscal (IVA 12%)" value={fmt(totC.iva)} highlight={C.blue}/>
+                  <FormField label="Compras Gravadas — Base Imponible" value={fmt(totC.base)} highlight={C.blue}/>
+                  <FormField label="Crédito Fiscal Compras (12%)" value={fmt(totC.iva)} highlight={C.blue}/>
+                  <FormField label="Remanente CF Mes Anterior" value={fmt(parseFloat(remanenteAnterior||0))} highlight={C.gold}/>
+                  <FormField label="Retenciones IVA Recibidas" value={fmt(retencionesIVA)} highlight={C.purple}/>
+                  <FormField label="Total Crédito Fiscal" value={fmt(creditoFiscal)} highlight={C.blue} big/>
                 </div>
                 <Divider label="DETERMINACIÓN"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   {ivaAPagar>0
                     ?<FormField label="IVA A PAGAR" value={fmt(ivaAPagar)} highlight={C.red} big/>
-                    :<FormField label="REMANENTE A FAVOR (CF)" value={fmt(ivaCF)} highlight={C.gold} big/>}
-                  <FormField label="Período de Pago" value={`Hasta el 30 de ${MESES[periodo.mes===11?0:periodo.mes+1]}`}/>
+                    :<FormField label="REMANENTE CF (arrastra al siguiente mes)" value={fmt(ivaCF)} highlight={C.gold} big/>}
+                  <FormField label="Vence" value={`Último día hábil de ${MESES[periodo.mes===11?0:periodo.mes+1]}`}/>
+                </div>
+                <div style={{marginTop:14,padding:12,background:C.goldDim,border:`1px solid ${C.gold}40`,borderRadius:8,fontSize:12,color:C.textMid}}>
+                  📌 Remanente para el próximo mes: <b style={{color:C.gold}}>{fmtQ(ivaCF>0?ivaCF:0)}</b> — Ingresa este valor en "Remanente mes anterior" de {MESES[periodo.mes===11?0:periodo.mes+1]}.
                 </div>
                 <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("IVA")}/>
               </Card>
@@ -417,6 +614,33 @@ function SistemaContable({cliente,onVolver}){
             <div>
               <h2 style={{fontWeight:800,fontSize:20,marginBottom:4}}>Formulario ISR — SAT-1361</h2>
               <p style={{color:C.textMid,marginBottom:20,fontSize:13}}>Impuesto Sobre la Renta — Régimen Sobre Utilidades 25%</p>
+
+              {/* Pagos trimestrales */}
+              <Card style={{marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.gold,marginBottom:14}}>💳 Pagos Trimestrales ISR — {periodo.anio}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+                  {pagosISR.map((p,i)=>(
+                    <div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+                      <div style={{fontSize:11,color:C.gold,fontWeight:700,marginBottom:8}}>TRIMESTRE {p.trimestre}</div>
+                      <div style={{marginBottom:8}}>
+                        <label style={{display:"block",fontSize:9,color:C.textDim,letterSpacing:0.6,textTransform:"uppercase",marginBottom:4}}>Monto pagado (Q)</label>
+                        <input type="number" value={p.pagado} onChange={e=>setPagosISR(ps=>ps.map((pp,j)=>j===i?{...pp,pagado:parseFloat(e.target.value)||0}:pp))}
+                          style={{width:"100%",background:C.card,border:`1px solid ${C.gold}40`,color:C.gold,borderRadius:6,padding:"7px 10px",fontSize:14,fontWeight:700,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                      </div>
+                      <div>
+                        <label style={{display:"block",fontSize:9,color:C.textDim,letterSpacing:0.6,textTransform:"uppercase",marginBottom:4}}>No. Declaración</label>
+                        <input type="text" value={p.numero_declaracion} onChange={e=>setPagosISR(ps=>ps.map((pp,j)=>j===i?{...pp,numero_declaracion:e.target.value}:pp))}
+                          placeholder="—" style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:6,padding:"6px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:14,display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:C.goldDim,borderRadius:8}}>
+                  <span style={{fontSize:13,color:C.textMid}}>Total ISR pagado en trimestres</span>
+                  <span style={{fontFamily:"monospace",fontWeight:800,color:C.gold,fontSize:16}}>{fmtQ(isrPagadoAcumulado)}</span>
+                </div>
+              </Card>
+
               <Card>
                 <SatHeader titulo="IMPUESTO SOBRE LA RENTA — RÉGIMEN SOBRE UTILIDADES" form="SAT-1361"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
@@ -428,10 +652,15 @@ function SistemaContable({cliente,onVolver}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <FormField label="Total Ingresos Gravados" value={fmt(totV.base)} highlight={C.accent}/>
                   <FormField label="Total Costos Deducibles" value={fmt(totC.base)} highlight={C.blue}/>
-                  <FormField label="Renta Imponible" value={fmt(Math.max(0,utilidad))} highlight={utilidad>=0?C.accent:C.red}/>
+                  <FormField label="Renta Imponible (Ingresos - Costos)" value={fmt(Math.max(0,utilidad))} highlight={utilidad>=0?C.accent:C.red}/>
                   <FormField label="Tasa ISR" value="25%"/>
-                  <FormField label="ISR DETERMINADO" value={fmt(isr)} highlight={C.gold} big/>
-                  <FormField label="ISR a Pagar" value={fmt(isr)} highlight={C.red} big/>
+                  <FormField label="ISR Determinado" value={fmt(isrBruto)} highlight={C.gold}/>
+                </div>
+                <Divider label="ACREDITAMIENTOS"/>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <FormField label="ISR Pagado en Trimestres Anteriores" value={fmt(isrPagadoAcumulado)} highlight={C.blue}/>
+                  <FormField label="Retenciones ISR Recibidas" value={fmt(retencionesISR)} highlight={C.purple}/>
+                  <FormField label="ISR NETO A PAGAR" value={fmt(isr)} highlight={C.red} big/>
                 </div>
                 <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("ISR")}/>
               </Card>
@@ -442,23 +671,52 @@ function SistemaContable({cliente,onVolver}){
           {tab==="iso"&&(
             <div>
               <h2 style={{fontWeight:800,fontSize:20,marginBottom:4}}>Formulario ISO — SAT-2800</h2>
-              <p style={{color:C.textMid,marginBottom:20,fontSize:13}}>Impuesto de Solidaridad — 1% sobre ingresos brutos</p>
+              <p style={{color:C.textMid,marginBottom:20,fontSize:13}}>Impuesto de Solidaridad — Trimestre {trimActual} de {periodo.anio}</p>
+
+              {/* Pagos trimestrales ISO */}
+              <Card style={{marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.blue,marginBottom:14}}>💳 Control de Pagos ISO — {periodo.anio}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+                  {pagosISO.map((p,i)=>(
+                    <div key={i} style={{background:p.trimestre===trimActual?C.blueDim:C.surface,border:`1px solid ${p.trimestre===trimActual?C.blue+"50":C.border}`,borderRadius:10,padding:14}}>
+                      <div style={{fontSize:11,color:p.trimestre===trimActual?C.blue:C.textMid,fontWeight:700,marginBottom:8}}>
+                        T{p.trimestre} {p.trimestre===trimActual?"← ACTUAL":""}
+                      </div>
+                      <div style={{marginBottom:8}}>
+                        <label style={{display:"block",fontSize:9,color:C.textDim,letterSpacing:0.6,textTransform:"uppercase",marginBottom:4}}>Ingresos trimestre (Q)</label>
+                        <input type="number" value={p.ingresos_trimestre} onChange={e=>setPagosISO(ps=>ps.map((pp,j)=>j===i?{...pp,ingresos_trimestre:parseFloat(e.target.value)||0}:pp))}
+                          style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                      </div>
+                      <div style={{marginBottom:8}}>
+                        <label style={{display:"block",fontSize:9,color:C.textDim,letterSpacing:0.6,textTransform:"uppercase",marginBottom:4}}>ISO pagado (Q)</label>
+                        <input type="number" value={p.pagado} onChange={e=>setPagosISO(ps=>ps.map((pp,j)=>j===i?{...pp,pagado:parseFloat(e.target.value)||0}:pp))}
+                          style={{width:"100%",background:C.card,border:`1px solid ${C.blue}40`,color:C.blue,borderRadius:6,padding:"7px 10px",fontSize:14,fontWeight:700,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                      </div>
+                      <div style={{fontSize:11,color:C.accent,fontWeight:600}}>
+                        ISO det.: {fmtQ(parseFloat(p.ingresos_trimestre||0)*0.01)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:14,padding:12,background:C.accentDim,border:`1px solid ${C.accentSoft}`,borderRadius:8,fontSize:12,color:C.textMid}}>
+                  ℹ️ El ISO pagado en cada trimestre puede acreditarse contra el ISR anual (Art. 10, Decreto 73-2008). Total ISO pagado este año: <b style={{color:C.accent}}>{fmtQ(pagosISO.reduce((s,p)=>s+parseFloat(p.pagado||0),0))}</b>
+                </div>
+              </Card>
+
               <Card>
                 <SatHeader titulo="DECLARACIÓN JURADA DEL IMPUESTO DE SOLIDARIDAD" form="SAT-2800"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
                   <FormField label="NIT" value={cliente.nit}/>
                   <FormField label="Razón Social" value={cliente.nombre}/>
-                  <FormField label="Trimestre" value={`T${Math.ceil((periodo.mes+1)/3)} ${periodo.anio}`}/>
+                  <FormField label="Trimestre" value={`T${trimActual} — ${periodo.anio}`}/>
                 </div>
-                <Divider label="CÁLCULO"/>
+                <Divider label="BASE DE CÁLCULO"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <FormField label="Ingresos Brutos" value={fmt(totV.total)} highlight={C.accent}/>
-                  <FormField label="Tasa ISO" value="1%"/>
-                  <FormField label="ISO DETERMINADO" value={fmt(iso)} highlight={C.gold} big/>
-                  <FormField label="ISO a Pagar" value={fmt(iso)} highlight={C.red} big/>
-                </div>
-                <div style={{marginTop:14,padding:12,background:C.goldDim,border:`1px solid ${C.gold}40`,borderRadius:8,fontSize:12,color:C.textMid}}>
-                  ℹ️ El ISO pagado puede acreditarse contra el ISR anual (Art. 10 Decreto 73-2008).
+                  <FormField label="Ingresos Brutos del Trimestre" value={fmt(ingresosTrim)} highlight={C.accent}/>
+                  <FormField label="Tasa ISO" value="1% sobre ingresos brutos"/>
+                  <FormField label="ISO DETERMINADO" value={fmt(isoDeterminado)} highlight={C.gold} big/>
+                  <FormField label="ISO YA PAGADO (este trimestre)" value={fmt(isoPagadoTrim)} highlight={C.blue}/>
+                  <FormField label="ISO A PAGAR" value={fmt(isoAPagar)} highlight={isoAPagar>0?C.red:C.accent} big/>
                 </div>
                 <CertSection certified={certified} certDate={certDate} onCertify={certificar} onDescargar={()=>descargarFlat("ISO")}/>
               </Card>
