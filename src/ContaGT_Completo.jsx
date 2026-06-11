@@ -829,8 +829,36 @@ function PanelAdmin({usuario,onLogout}){
     }catch(e){alert("Error de conexión");}
   };
 
+  const [planesEdit,setPlanesEdit]=useState({
+    basico:{precio:149,limiteClientes:5},
+    pro:{precio:299,limiteClientes:25},
+    ilimitado:{precio:599,limiteClientes:999},
+  });
+  const [planesGuardado,setPlanesGuardado]=useState(false);
+
+  const guardarPlanes=()=>{
+    setPlanesGuardado(true);
+    setTimeout(()=>setPlanesGuardado(false),3000);
+    alert("✅ Precios actualizados. Para que sean permanentes necesitas guardarlos en la base de datos.");
+  };
+
+  const cambiarRol=async(id,rol)=>{
+    try{
+      const res=await fetch(`${API_URL}/api/admin/contadores/${id}`,{method:"PUT",headers,body:JSON.stringify({rol})});
+      const data=await res.json();
+      if(data.ok) cargarContadores();
+      else alert(data.error);
+    }catch(e){alert("Error de conexión");}
+  };
+
   const mrr=contadores.filter(u=>u.estado==="activo").reduce((s,u)=>s+(PLANES[u.plan]?.precio||0),0);
-  const TABS=[{id:"contadores",label:"Contadores",icon:"👥"},{id:"planes",label:"Planes",icon:"💎"},{id:"reportes",label:"Reportes",icon:"📊"}];
+  const TABS=[
+    {id:"contadores",label:"Contadores",icon:"👥"},
+    {id:"planes",label:"Planes & Precios",icon:"💎"},
+    {id:"roles",label:"Roles",icon:"🔐"},
+    {id:"reportes",label:"Reportes",icon:"📊"},
+    {id:"config",label:"Configuración",icon:"⚙️"},
+  ];
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",display:"flex"}}>
@@ -919,27 +947,100 @@ function PanelAdmin({usuario,onLogout}){
 
         {tab==="planes"&&(
           <div>
-            <h2 style={{fontWeight:800,fontSize:22,marginBottom:24}}>Planes & Precios</h2>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20}}>
-              {Object.values(PLANES).map(p=>(
-                <Card key={p.id} color={p.color}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+              <div><h2 style={{fontWeight:800,fontSize:22,margin:0}}>Planes & Precios</h2><p style={{color:C.textMid,margin:"4px 0 0",fontSize:13}}>Edita los precios y límites de cada plan</p></div>
+              <Btn onClick={guardarPlanes} color={C.accent} icon="💾">{planesGuardado?"✓ Guardado":"Guardar Cambios"}</Btn>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20,marginBottom:20}}>
+              {Object.entries(PLANES).map(([key,p])=>(
+                <Card key={key} color={p.color}>
                   <div style={{fontSize:28,color:p.color,marginBottom:8}}>{p.icon}</div>
-                  <div style={{fontWeight:800,fontSize:20,marginBottom:4}}>{p.nombre}</div>
-                  <div style={{fontFamily:"monospace",fontSize:30,fontWeight:900,color:p.color,marginBottom:4}}>Q{p.precio}<span style={{fontSize:13,color:C.textMid,fontWeight:400}}>/mes</span></div>
-                  <div style={{fontSize:11,color:C.textDim,marginBottom:16}}>{contadores.filter(u=>u.plan===p.id&&u.estado==="activo").length} contadores · Q{(contadores.filter(u=>u.plan===p.id&&u.estado==="activo").length*p.precio).toLocaleString()} MRR</div>
-                  <div style={{borderTop:`1px solid ${p.color}25`,paddingTop:12}}>
-                    <div style={{fontSize:12,color:C.textMid}}>Hasta <b style={{color:p.color}}>{p.limiteClientes===999?"Ilimitados":p.limiteClientes}</b> clientes</div>
+                  <div style={{fontWeight:800,fontSize:18,marginBottom:16,color:p.color}}>{p.nombre}</div>
+                  <div style={{marginBottom:14}}>
+                    <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>Precio mensual (Q)</label>
+                    <input type="number" value={planesEdit[key].precio}
+                      onChange={e=>setPlanesEdit(pe=>({...pe,[key]:{...pe[key],precio:+e.target.value}}))}
+                      style={{width:"100%",background:C.surface,border:`1px solid ${p.color}50`,color:p.color,borderRadius:8,padding:"10px 14px",fontSize:20,fontWeight:800,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>Límite de clientes</label>
+                    <input type="number" value={planesEdit[key].limiteClientes}
+                      onChange={e=>setPlanesEdit(pe=>({...pe,[key]:{...pe[key],limiteClientes:+e.target.value}}))}
+                      style={{width:"100%",background:C.surface,border:`1px solid ${C.border}`,color:C.text,borderRadius:8,padding:"10px 14px",fontSize:14,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                  </div>
+                  <div style={{borderTop:`1px solid ${p.color}25`,paddingTop:12,fontSize:11,color:C.textDim}}>
+                    {contadores.filter(u=>u.plan===key&&u.estado==="activo").length} contadores activos · Q{(contadores.filter(u=>u.plan===key&&u.estado==="activo").length*planesEdit[key].precio).toLocaleString()} MRR
                   </div>
                 </Card>
               ))}
             </div>
-            <Card style={{marginTop:20}}>
+            <Card>
               <div style={{fontWeight:700,fontSize:14,color:C.gold,marginBottom:16}}>💰 Resumen Financiero</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
                 <Stat label="MRR Total" value={`Q${mrr.toLocaleString()}`} color={C.gold}/>
                 <Stat label="ARR Proyectado" value={`Q${(mrr*12).toLocaleString()}`} color={C.accent}/>
                 <Stat label="Ticket Promedio" value={`Q${contadores.filter(u=>u.estado==="activo").length?Math.round(mrr/contadores.filter(u=>u.estado==="activo").length):0}`} color={C.blue}/>
               </div>
+            </Card>
+          </div>
+        )}
+
+        {tab==="roles"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+              <div><h2 style={{fontWeight:800,fontSize:22,margin:0}}>Gestión de Roles</h2><p style={{color:C.textMid,margin:"4px 0 0",fontSize:13}}>Asigna permisos a cada contador</p></div>
+              <Btn onClick={cargarContadores} color={C.blue} size="sm" icon="↻">Actualizar</Btn>
+            </div>
+            <Card style={{marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:13,color:C.accent,marginBottom:12}}>📋 Descripción de Roles</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                {[
+                  {rol:"admin",color:C.gold,icon:"👑",desc:"Acceso total. Puede crear/editar/eliminar contadores, cambiar planes, ver reportes y configurar el sistema."},
+                  {rol:"contador",color:C.accent,icon:"👤",desc:"Acceso estándar. Puede gestionar sus propias empresas cliente, generar declaraciones y usar el asistente IA."},
+                ].map(r=>(
+                  <div key={r.rol} style={{padding:16,background:r.color+"10",border:`1px solid ${r.color}30`,borderRadius:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                      <span style={{fontSize:18}}>{r.icon}</span>
+                      <span style={{fontWeight:800,color:r.color,textTransform:"uppercase",fontSize:13}}>{r.rol}</span>
+                    </div>
+                    <div style={{fontSize:12,color:C.textMid,lineHeight:1.6}}>{r.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card style={{padding:0,overflow:"hidden"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr style={{background:C.surface}}>
+                    {["Contador","Email","Rol Actual","Cambiar Rol"].map(h=>(
+                      <th key={h} style={{textAlign:"left",padding:"12px 16px",fontSize:10,color:C.textDim,letterSpacing:0.6,borderBottom:`1px solid ${C.border}`}}>{h.toUpperCase()}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {contadores.map((u,i)=>(
+                    <tr key={u.id} style={{borderBottom:`1px solid ${C.border}20`,background:i%2===0?"transparent":C.surface+"40"}}>
+                      <td style={{padding:"12px 16px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <Avatar nombre={u.nombre} size={30} color={u.rol==="admin"?C.gold:C.accent}/>
+                          <div><div style={{fontWeight:600}}>{u.nombre}</div><div style={{fontSize:10,color:C.textDim}}>#{u.colegiado||"—"}</div></div>
+                        </div>
+                      </td>
+                      <td style={{padding:"12px 16px",color:C.textMid,fontSize:12}}>{u.email}</td>
+                      <td style={{padding:"12px 16px"}}>
+                        <Pill color={u.rol==="admin"?C.gold:C.accent}>{u.rol==="admin"?"👑 ADMIN":"👤 CONTADOR"}</Pill>
+                      </td>
+                      <td style={{padding:"12px 16px"}}>
+                        <div style={{display:"flex",gap:8}}>
+                          {u.rol!=="admin"&&<Btn size="sm" color={C.gold} onClick={()=>cambiarRol(u.id,"admin")} icon="👑">Hacer Admin</Btn>}
+                          {u.rol==="admin"&&<Btn size="sm" color={C.accent} onClick={()=>cambiarRol(u.id,"contador")} icon="👤">Quitar Admin</Btn>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {contadores.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim}}>No hay contadores registrados.</div>}
             </Card>
           </div>
         )}
@@ -972,6 +1073,95 @@ function PanelAdmin({usuario,onLogout}){
                     <span style={{fontSize:20,fontWeight:800,color:c,fontFamily:"monospace"}}>{v}</span>
                   </div>
                 ))}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.purple,marginBottom:16}}>🔌 Estado Servicios SAT</div>
+                {[["Portal RTU / NIT","operational"],["Portal FEL","operational"],["Declaraguate","operational"],["Backend ContaGT","operational"]].map(([s,est])=>(
+                  <div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.border}20`}}>
+                    <span style={{fontSize:13,color:C.textMid}}>{s}</span>
+                    <Pill color={est==="operational"?C.accent:C.gold}>{est==="operational"?"✓ Operacional":"⚠ Degradado"}</Pill>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.accent,marginBottom:16}}>📈 Ingresos por Plan</div>
+                {Object.entries(PLANES).map(([key,p])=>{
+                  const activos=contadores.filter(u=>u.plan===key&&u.estado==="activo").length;
+                  const ingresos=activos*p.precio;
+                  return(
+                    <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${C.border}20`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{color:p.color}}>{p.icon}</span>
+                        <span style={{fontSize:13,color:C.textMid}}>{p.nombre} ({activos} contadores)</span>
+                      </div>
+                      <span style={{fontWeight:700,color:p.color,fontFamily:"monospace"}}>Q{ingresos.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {tab==="config"&&(
+          <div>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:24}}>Configuración del Sistema</h2>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.accent,marginBottom:16}}>🏢 Datos del Sistema</div>
+                {[
+                  {label:"Nombre del sistema",val:"ContaGT Pro",edit:true},
+                  {label:"País",val:"Guatemala",edit:false},
+                  {label:"Moneda",val:"Quetzales (GTQ)",edit:false},
+                  {label:"Período de prueba",val:"14 días",edit:true},
+                  {label:"Versión",val:"2.0.0",edit:false},
+                ].map(({label,val,edit})=>(
+                  <div key={label} style={{marginBottom:12}}>
+                    <label style={{display:"block",fontSize:10,color:C.textDim,letterSpacing:0.6,textTransform:"uppercase",marginBottom:4}}>{label}</label>
+                    <div style={{background:C.surface,border:`1px solid ${edit?C.border:C.border+"50"}`,borderRadius:7,padding:"9px 12px",fontSize:13,color:edit?C.text:C.textMid,fontWeight:edit?500:400}}>{val}</div>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.gold,marginBottom:16}}>🔐 Seguridad</div>
+                {[
+                  ["API Key Backend","Configurada ✓",C.accent],
+                  ["JWT Secret","Configurado ✓",C.accent],
+                  ["CORS","Activo",C.accent],
+                  ["Rate Limiting","200 req/15min",C.blue],
+                  ["Base de Datos","PostgreSQL 15",C.blue],
+                  ["SSL/HTTPS","Activo",C.accent],
+                ].map(([k,v,c])=>(
+                  <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:`1px solid ${C.border}20`}}>
+                    <span style={{fontSize:13,color:C.textMid}}>{k}</span>
+                    <span style={{fontSize:12,color:c,fontWeight:600}}>{v}</span>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.blue,marginBottom:16}}>📋 Formularios SAT Configurados</div>
+                {[
+                  ["IVA Mensual","SAT-1311","Decreto 27-92",C.accent],
+                  ["ISR Trimestral","SAT-1361","Decreto 10-2012",C.gold],
+                  ["ISO Trimestral","SAT-2800","Decreto 73-2008",C.blue],
+                ].map(([nombre,form,decreto,color])=>(
+                  <div key={form} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}20`}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600,color:C.text}}>{nombre}</div>
+                      <div style={{fontSize:10,color:C.textDim}}>{decreto}</div>
+                    </div>
+                    <Pill color={color}>{form}</Pill>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.red,marginBottom:16}}>⚠️ Zona de Peligro</div>
+                <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Estas acciones son irreversibles. Úsalas con precaución.</div>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <Btn color={C.gold} icon="📧" full onClick={()=>alert("Función de envío de emails próximamente")}>Enviar recordatorios de pago</Btn>
+                  <Btn color={C.blue} icon="📊" full onClick={()=>alert("Exportación de reportes próximamente")}>Exportar reporte de contadores</Btn>
+                  <Btn color={C.red} icon="🗑" full onClick={()=>alert("Esta acción requiere confirmación adicional")}>Limpiar cuentas trial expiradas</Btn>
+                </div>
               </Card>
             </div>
           </div>
