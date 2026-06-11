@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -28,13 +28,8 @@ const PLANES = {
   ilimitado: { id:"ilimitado", nombre:"Ilimitado", precio:599, color:C.gold,   icon:"◉", limiteClientes:999},
 };
 
-const CLIENTES_INICIALES = [
-  { id:"c1", nombre:"Distribuciones El Rápido S.A.", nit:"5908472-K", regimen:"general",  sector:"Comercio",       declaracionesPendientes:1, ultimaDeclaracion:"May 2025" },
-  { id:"c2", nombre:"Farmacia San José",             nit:"1234567-8", regimen:"pequenio", sector:"Farmacéutico",   declaracionesPendientes:0, ultimaDeclaracion:"May 2025" },
-  { id:"c3", nombre:"Constructora Norte GT",         nit:"9876543-1", regimen:"general",  sector:"Construcción",   declaracionesPendientes:2, ultimaDeclaracion:"Abr 2025" },
-  { id:"c4", nombre:"Restaurante La Colonial",       nit:"3456789-0", regimen:"pequenio", sector:"Alimentos",      declaracionesPendientes:0, ultimaDeclaracion:"May 2025" },
-  { id:"c5", nombre:"Servicios Tech GT",             nit:"7654321-K", regimen:"opcional", sector:"Tecnología",     declaracionesPendientes:1, ultimaDeclaracion:"May 2025" },
-];
+const API_URL = process.env.REACT_APP_API_URL || "";
+const API_KEY = process.env.REACT_APP_API_KEY || "";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPONENTES BASE
@@ -186,22 +181,31 @@ function SistemaContable({cliente,onVolver}){
   const consultarNIT=async()=>{
     if(!nitConsulta.trim())return;
     setNitLoading(true);setNitResult(null);
-    await new Promise(r=>setTimeout(r,1200));
-    const estados=["ACTIVO","ACTIVO","ACTIVO","SUSPENDIDO"];
-    const regimenes=["Afecto IVA General","Pequeño Contribuyente","Régimen Opcional Simplificado"];
-    setNitResult({nit:nitConsulta,nombre:`CONTRIBUYENTE NIT ${nitConsulta}`,estado:estados[Math.floor(Math.random()*estados.length)],tipo:"Jurídico",regimen:regimenes[Math.floor(Math.random()*regimenes.length)],actividad:"Actividad económica registrada",direccion:"Dirección registrada en SAT"});
+    try{
+      const res=await fetch(`${API_URL}/api/nit/${nitConsulta.trim()}`,{headers:{"X-API-Key":API_KEY}});
+      const data=await res.json();
+      if(data.ok) setNitResult(data.datos);
+      else setNitResult({nit:nitConsulta,nombre:"No encontrado",estado:"ERROR",tipo:"—",regimen:"—",actividad:"—",direccion:data.error||"Sin respuesta"});
+    }catch(e){
+      setNitResult({nit:nitConsulta,nombre:"Error de conexión al backend",estado:"ERROR",tipo:"—",regimen:"—",actividad:"—",direccion:e.message});
+    }
     setNitLoading(false);
   };
 
   const validarFEL=async()=>{
     if(!uuidConsulta.trim())return;
     setFelLoading(true);setFelResult(null);
-    await new Promise(r=>setTimeout(r,1000));
-    const estados=[{estado:"CERTIFICADA",color:C.accent,icon:"✓"},{estado:"ANULADA",color:C.red,icon:"✗"},{estado:"CERTIFICADA",color:C.accent,icon:"✓"},{estado:"CERTIFICADA",color:C.accent,icon:"✓"}];
-    const est=estados[Math.floor(Math.random()*estados.length)];
-    const total=(Math.random()*50000+100).toFixed(2);
-    const base=(parseFloat(total)/1.12).toFixed(2);
-    setFelResult({uuid:uuidConsulta,...est,tipo:"FACTURA",emisor:"EMPRESA EMISORA GT S.A.",nitEmisor:`${Math.floor(Math.random()*9000000+1000000)}-K`,fechaEmision:today(),base,iva:(parseFloat(total)-parseFloat(base)).toFixed(2),total,certificador:"INFILE S.A."});
+    try{
+      const res=await fetch(`${API_URL}/api/fel/${uuidConsulta.trim()}`,{headers:{"X-API-Key":API_KEY}});
+      const data=await res.json();
+      if(data.datos){
+        setFelResult({uuid:uuidConsulta,estado:data.datos.estado,color:data.datos.estado==="CERTIFICADA"?C.accent:C.red,icon:data.datos.estado==="CERTIFICADA"?"✓":"✗",tipo:data.datos.tipo||"FACTURA",emisor:data.datos.nombreEmisor||"—",nitEmisor:data.datos.nitEmisor||"—",fechaEmision:data.datos.fechaEmision||"—",base:data.datos.totalSinImpuestos||0,iva:data.datos.totalImpuestos||0,total:data.datos.totalConImpuestos||0,certificador:data.datos.certificador||"—"});
+      }else{
+        setFelResult({uuid:uuidConsulta,estado:"NO ENCONTRADA",color:C.red,icon:"✗",tipo:"—",emisor:data.error||"Sin respuesta",nitEmisor:"—",fechaEmision:"—",base:0,iva:0,total:0,certificador:"—"});
+      }
+    }catch(e){
+      setFelResult({uuid:uuidConsulta,estado:"ERROR",color:C.red,icon:"✗",tipo:"—",emisor:e.message,nitEmisor:"—",fechaEmision:"—",base:0,iva:0,total:0,certificador:"—"});
+    }
     setFelLoading(false);
   };
 
@@ -642,11 +646,16 @@ function CertSection({certified,certDate,onCertify,onDescargar}){
 // PANEL CONTADOR
 // ══════════════════════════════════════════════════════════════════════════════
 function PanelContador({usuario,onLogout}){
-  const [clientes,setClientes]=useState(CLIENTES_INICIALES);
+  const [clientes,setClientes]=useState([]);
   const [clienteActivo,setClienteActivo]=useState(null);
   const [mostrarModal,setMostrarModal]=useState(false);
   const [nuevoCliente,setNuevoCliente]=useState({nombre:"",nit:"",regimen:"general",sector:""});
   const plan=PLANES[usuario.plan]||PLANES.basico;
+
+  const eliminarCliente=(id)=>{
+    if(window.confirm("¿Eliminar esta empresa del sistema?"))
+      setClientes(cs=>cs.filter(c=>c.id!==id));
+  };
 
   const agregarCliente=()=>{
     if(!nuevoCliente.nombre||!nuevoCliente.nit){alert("Nombre y NIT son requeridos");return;}
@@ -719,7 +728,10 @@ function PanelContador({usuario,onLogout}){
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:11,color:C.textDim}}>Última declaración: {c.ultimaDeclaracion}</span>
-                <div style={{background:C.accent+"18",border:`1px solid ${C.accent}40`,color:C.accent,borderRadius:7,padding:"5px 12px",fontSize:11,fontWeight:700}}>Gestionar →</div>
+                <div style={{display:"flex",gap:6}}>
+                  <div onClick={e=>{e.stopPropagation();eliminarCliente(c.id);}} style={{background:C.red+"18",border:`1px solid ${C.red}40`,color:C.red,borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑</div>
+                  <div style={{background:C.accent+"18",border:`1px solid ${C.accent}40`,color:C.accent,borderRadius:7,padding:"5px 12px",fontSize:11,fontWeight:700}}>Gestionar →</div>
+                </div>
               </div>
             </div>
           ))}
@@ -767,52 +779,293 @@ function PanelContador({usuario,onLogout}){
 // PANEL ADMIN
 // ══════════════════════════════════════════════════════════════════════════════
 function PanelAdmin({usuario,onLogout}){
-  const [usuarios]=useState([
-    {id:"1",nombre:"María Salazar",email:"maria@despachosal.gt",plan:"pro",estado:"activo",clientes:12,declaracionesMes:28,fechaRegistro:"2024-10-02",colegiado:"4432"},
-    {id:"2",nombre:"Roberto Fuentes",email:"rfuentes@gmail.com",plan:"basico",estado:"activo",clientes:4,declaracionesMes:9,fechaRegistro:"2025-01-20",colegiado:"9901"},
-    {id:"3",nombre:"Ana Castillo",email:"ana@auditgt.com",plan:"pro",estado:"suspendido",clientes:8,declaracionesMes:0,fechaRegistro:"2024-12-05",colegiado:"6617"},
-    {id:"4",nombre:"Luis Pérez",email:"lperez@fiscalgt.com",plan:"basico",estado:"trial",clientes:2,declaracionesMes:4,fechaRegistro:"2025-06-01",colegiado:"1145"},
-  ]);
-  const mrr=usuarios.filter(u=>u.estado==="activo").reduce((s,u)=>s+(PLANES[u.plan]?.precio||0),0);
+  const [tab,setTab]=useState("contadores");
+  const [contadores,setContadores]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [modalNuevo,setModalNuevo]=useState(false);
+  const [modalEditar,setModalEditar]=useState(null);
+  const [confirmacion,setConfirmacion]=useState(null);
+  const [nuevo,setNuevo]=useState({nombre:"",email:"",password:"",colegiado:"",telefono:"",plan:"basico"});
+  const token=localStorage.getItem("token");
+  const headers={"Content-Type":"application/json","X-API-Key":API_KEY,"Authorization":`Bearer ${token}`};
+
+  const cargarContadores=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const res=await fetch(`${API_URL}/api/admin/contadores`,{headers});
+      const data=await res.json();
+      if(data.ok)setContadores(data.contadores);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{cargarContadores();},[cargarContadores]);
+
+  const crearContador=async()=>{
+    if(!nuevo.nombre||!nuevo.email||!nuevo.password){alert("Nombre, email y contraseña son requeridos");return;}
+    try{
+      const res=await fetch(`${API_URL}/api/admin/contadores`,{method:"POST",headers,body:JSON.stringify(nuevo)});
+      const data=await res.json();
+      if(data.ok){setModalNuevo(false);setNuevo({nombre:"",email:"",password:"",colegiado:"",telefono:"",plan:"basico"});cargarContadores();}
+      else alert(data.error);
+    }catch(e){alert("Error de conexión");}
+  };
+
+  const actualizarContador=async(id,cambios)=>{
+    try{
+      const res=await fetch(`${API_URL}/api/admin/contadores/${id}`,{method:"PUT",headers,body:JSON.stringify(cambios)});
+      const data=await res.json();
+      if(data.ok){cargarContadores();setModalEditar(null);setConfirmacion(null);}
+      else alert(data.error);
+    }catch(e){alert("Error de conexión");}
+  };
+
+  const eliminarContador=async(id)=>{
+    try{
+      const res=await fetch(`${API_URL}/api/admin/contadores/${id}`,{method:"DELETE",headers});
+      const data=await res.json();
+      if(data.ok){cargarContadores();setConfirmacion(null);}
+      else alert(data.error);
+    }catch(e){alert("Error de conexión");}
+  };
+
+  const mrr=contadores.filter(u=>u.estado==="activo").reduce((s,u)=>s+(PLANES[u.plan]?.precio||0),0);
+  const TABS=[{id:"contadores",label:"Contadores",icon:"👥"},{id:"planes",label:"Planes",icon:"💎"},{id:"reportes",label:"Reportes",icon:"📊"}];
 
   return(
-    <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
-      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 28px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:34,height:34,background:`linear-gradient(135deg,${C.accent},${C.blue})`,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>⬡</div>
-          <div><div style={{fontWeight:800,fontSize:15}}>ContaGT <span style={{color:C.accent}}>Pro</span></div><div style={{fontSize:10,color:C.textDim}}>PANEL ADMINISTRADOR</div></div>
+    <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",display:"flex"}}>
+      <nav style={{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"20px 0"}}>
+        <div style={{padding:"0 18px 20px",borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <div style={{width:34,height:34,background:`linear-gradient(135deg,${C.accent},${C.blue})`,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>⬡</div>
+            <div style={{fontWeight:800,fontSize:14}}>ContaGT <span style={{color:C.accent}}>Pro</span></div>
+          </div>
+          <Pill color={C.gold}>👑 ADMINISTRADOR</Pill>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <Pill color={C.gold}>👑 ADMIN</Pill>
-          <span style={{fontSize:13,color:C.text,fontWeight:600}}>{usuario.nombre}</span>
-          <Btn onClick={onLogout} color={C.red} size="sm" icon="↩">Salir</Btn>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 18px",background:tab===t.id?C.accent+"15":"transparent",borderLeft:tab===t.id?`3px solid ${C.accent}`:"3px solid transparent",border:"none",borderRight:"none",color:tab===t.id?C.accent:C.textMid,fontSize:13,fontWeight:tab===t.id?700:400,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
+        <div style={{marginTop:"auto",padding:"16px 18px",borderTop:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <Avatar nombre={usuario.nombre} size={32} color={C.gold}/>
+            <div><div style={{fontSize:12,fontWeight:700}}>{usuario.nombre}</div><div style={{fontSize:10,color:C.textDim}}>Admin</div></div>
+          </div>
+          <Btn onClick={onLogout} color={C.red} size="sm" full icon="↩">Cerrar sesión</Btn>
         </div>
-      </div>
-      <div style={{padding:28}}>
-        <h2 style={{fontWeight:800,fontSize:20,marginBottom:20}}>Panel de Administración</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
-          <Stat label="Contadores" value={usuarios.length} icon="👥" color={C.blue}/>
-          <Stat label="Activos" value={usuarios.filter(u=>u.estado==="activo").length} icon="✓" color={C.accent}/>
-          <Stat label="MRR" value={`Q${mrr.toLocaleString()}`} icon="💰" color={C.gold} sub="Ingresos mensuales"/>
-          <Stat label="En Trial" value={usuarios.filter(u=>u.estado==="trial").length} icon="⏳" color={C.purple}/>
+      </nav>
+
+      <main style={{flex:1,padding:28,overflowY:"auto"}}>
+        {tab==="contadores"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+              <div><h2 style={{fontWeight:800,fontSize:22,margin:0}}>Gestión de Contadores</h2><p style={{color:C.textMid,margin:"4px 0 0",fontSize:13}}>{contadores.length} contadores registrados</p></div>
+              <div style={{display:"flex",gap:10}}>
+                <Btn onClick={cargarContadores} color={C.blue} size="sm" icon="↻">Actualizar</Btn>
+                <Btn onClick={()=>setModalNuevo(true)} color={C.accent} icon="+">Nuevo Contador</Btn>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
+              <Stat label="Total" value={contadores.length} icon="👥" color={C.blue}/>
+              <Stat label="Activos" value={contadores.filter(u=>u.estado==="activo").length} icon="✓" color={C.accent}/>
+              <Stat label="MRR" value={`Q${mrr.toLocaleString()}`} icon="💰" color={C.gold}/>
+              <Stat label="Trial" value={contadores.filter(u=>u.estado==="trial").length} icon="⏳" color={C.purple}/>
+            </div>
+            {loading?(
+              <div style={{textAlign:"center",padding:40,color:C.textMid}}>Cargando contadores...</div>
+            ):(
+              <Card style={{padding:0,overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:C.surface}}>
+                      {["Contador","Email","Plan","Estado","Registrado","Acciones"].map(h=>(
+                        <th key={h} style={{textAlign:"left",padding:"12px 16px",fontSize:10,color:C.textDim,letterSpacing:0.6,borderBottom:`1px solid ${C.border}`}}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contadores.map((u,i)=>(
+                      <tr key={u.id} style={{borderBottom:`1px solid ${C.border}20`,background:i%2===0?"transparent":C.surface+"40"}}>
+                        <td style={{padding:"12px 16px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <Avatar nombre={u.nombre} size={30} color={planColor(u.plan)}/>
+                            <div><div style={{fontWeight:600}}>{u.nombre}</div><div style={{fontSize:10,color:C.textDim}}>#{u.colegiado||"—"}</div></div>
+                          </div>
+                        </td>
+                        <td style={{padding:"12px 16px",color:C.textMid,fontSize:12}}>{u.email}</td>
+                        <td style={{padding:"12px 16px"}}><Pill color={planColor(u.plan)}>{PLANES[u.plan]?.nombre||u.plan}</Pill></td>
+                        <td style={{padding:"12px 16px"}}><Pill color={estadoColor(u.estado)}>{u.estado.toUpperCase()}</Pill></td>
+                        <td style={{padding:"12px 16px",color:C.textMid,fontSize:11}}>{u.fecha_registro?.split("T")[0]||"—"}</td>
+                        <td style={{padding:"12px 16px"}}>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                            <Btn size="sm" color={C.blue} onClick={()=>setModalEditar({...u})} icon="✏">Editar</Btn>
+                            {u.estado==="activo"
+                              ?<Btn size="sm" color={C.red} onClick={()=>setConfirmacion({u,accion:"suspender"})}>Suspender</Btn>
+                              :<Btn size="sm" color={C.accent} onClick={()=>actualizarContador(u.id,{estado:"activo"})}>Activar</Btn>
+                            }
+                            <Btn size="sm" color={C.red} onClick={()=>setConfirmacion({u,accion:"eliminar"})}>🗑</Btn>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {contadores.length===0&&<div style={{textAlign:"center",padding:40,color:C.textDim}}>No hay contadores registrados aún.<br/>Crea el primero con "Nuevo Contador".</div>}
+              </Card>
+            )}
+          </div>
+        )}
+
+        {tab==="planes"&&(
+          <div>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:24}}>Planes & Precios</h2>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20}}>
+              {Object.values(PLANES).map(p=>(
+                <Card key={p.id} color={p.color}>
+                  <div style={{fontSize:28,color:p.color,marginBottom:8}}>{p.icon}</div>
+                  <div style={{fontWeight:800,fontSize:20,marginBottom:4}}>{p.nombre}</div>
+                  <div style={{fontFamily:"monospace",fontSize:30,fontWeight:900,color:p.color,marginBottom:4}}>Q{p.precio}<span style={{fontSize:13,color:C.textMid,fontWeight:400}}>/mes</span></div>
+                  <div style={{fontSize:11,color:C.textDim,marginBottom:16}}>{contadores.filter(u=>u.plan===p.id&&u.estado==="activo").length} contadores · Q{(contadores.filter(u=>u.plan===p.id&&u.estado==="activo").length*p.precio).toLocaleString()} MRR</div>
+                  <div style={{borderTop:`1px solid ${p.color}25`,paddingTop:12}}>
+                    <div style={{fontSize:12,color:C.textMid}}>Hasta <b style={{color:p.color}}>{p.limiteClientes===999?"Ilimitados":p.limiteClientes}</b> clientes</div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <Card style={{marginTop:20}}>
+              <div style={{fontWeight:700,fontSize:14,color:C.gold,marginBottom:16}}>💰 Resumen Financiero</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+                <Stat label="MRR Total" value={`Q${mrr.toLocaleString()}`} color={C.gold}/>
+                <Stat label="ARR Proyectado" value={`Q${(mrr*12).toLocaleString()}`} color={C.accent}/>
+                <Stat label="Ticket Promedio" value={`Q${contadores.filter(u=>u.estado==="activo").length?Math.round(mrr/contadores.filter(u=>u.estado==="activo").length):0}`} color={C.blue}/>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab==="reportes"&&(
+          <div>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:20}}>Reportes</h2>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.gold,marginBottom:16}}>💎 Distribución por Plan</div>
+                {Object.values(PLANES).map(p=>{
+                  const count=contadores.filter(u=>u.plan===p.id).length;
+                  const pct=contadores.length?Math.round(count/contadores.length*100):0;
+                  return(
+                    <div key={p.id} style={{marginBottom:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                        <span style={{fontSize:12,color:p.color,fontWeight:700}}>{p.nombre}</span>
+                        <span style={{fontSize:12,color:C.textMid}}>{count} ({pct}%)</span>
+                      </div>
+                      <div style={{height:8,background:C.surface,borderRadius:4}}><div style={{width:`${pct}%`,height:"100%",background:p.color,borderRadius:4}}/></div>
+                    </div>
+                  );
+                })}
+              </Card>
+              <Card>
+                <div style={{fontWeight:700,fontSize:14,color:C.blue,marginBottom:16}}>📊 Estado de Cuentas</div>
+                {[["Activas",contadores.filter(u=>u.estado==="activo").length,C.accent],["Trial",contadores.filter(u=>u.estado==="trial").length,C.gold],["Suspendidas",contadores.filter(u=>u.estado==="suspendido").length,C.red]].map(([l,v,c])=>(
+                  <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}20`}}>
+                    <span style={{fontSize:13,color:C.textMid}}>{l}</span>
+                    <span style={{fontSize:20,fontWeight:800,color:c,fontFamily:"monospace"}}>{v}</span>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {modalNuevo&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:32,width:480}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+              <h3 style={{margin:0,fontSize:18,fontWeight:800}}>Crear Nuevo Contador</h3>
+              <button onClick={()=>setModalNuevo(false)} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer"}}>✕</button>
+            </div>
+            <Input label="Nombre completo" value={nuevo.nombre} onChange={v=>setNuevo(n=>({...n,nombre:v}))} placeholder="Lic. Juan Pérez" icon="👤"/>
+            <Input label="Email" value={nuevo.email} onChange={v=>setNuevo(n=>({...n,email:v}))} placeholder="contador@correo.com" type="email" icon="📧"/>
+            <Input label="Contraseña inicial" value={nuevo.password} onChange={v=>setNuevo(n=>({...n,password:v}))} placeholder="Mínimo 8 caracteres" type="password" icon="🔒"/>
+            <Input label="Colegiado CPA" value={nuevo.colegiado} onChange={v=>setNuevo(n=>({...n,colegiado:v}))} placeholder="Ej: 12345" icon="🏛️"/>
+            <Input label="Teléfono" value={nuevo.telefono} onChange={v=>setNuevo(n=>({...n,telefono:v}))} placeholder="Ej: 5555-1234" icon="📱"/>
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:6}}>Plan</label>
+              <select value={nuevo.plan} onChange={e=>setNuevo(n=>({...n,plan:e.target.value}))} style={{width:"100%",background:C.surface,border:`1px solid ${C.border}`,color:C.text,borderRadius:9,padding:"11px 14px",fontSize:13,fontFamily:"inherit"}}>
+                {Object.values(PLANES).map(p=><option key={p.id} value={p.id}>{p.nombre} — Q{p.precio}/mes</option>)}
+              </select>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={()=>setModalNuevo(false)} color={C.textMid} full>Cancelar</Btn>
+              <Btn onClick={crearContador} color={C.accent} full icon="✓">Crear Contador</Btn>
+            </div>
+          </div>
         </div>
-        <Card>
-          <div style={{fontWeight:700,fontSize:14,color:C.accent,marginBottom:16}}>👥 Contadores Registrados</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{background:C.surface}}>{["Contador","Email","Plan","Estado","Clientes","Registrado"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:10,color:C.textDim,letterSpacing:0.6,borderBottom:`1px solid ${C.border}`}}>{h.toUpperCase()}</th>)}</tr></thead>
-            <tbody>{usuarios.map((u,i)=>(
-              <tr key={u.id} style={{borderBottom:`1px solid ${C.border}20`,background:i%2===0?"transparent":C.surface+"40"}}>
-                <td style={{padding:"11px 14px"}}><div style={{display:"flex",alignItems:"center",gap:10}}><Avatar nombre={u.nombre} size={28} color={planColor(u.plan)}/><div><div style={{fontWeight:600,fontSize:13}}>{u.nombre}</div><div style={{fontSize:10,color:C.textDim}}>#{u.colegiado}</div></div></div></td>
-                <td style={{padding:"11px 14px",color:C.textMid,fontSize:12}}>{u.email}</td>
-                <td style={{padding:"11px 14px"}}><Pill color={planColor(u.plan)}>{PLANES[u.plan]?.nombre}</Pill></td>
-                <td style={{padding:"11px 14px"}}><Pill color={estadoColor(u.estado)}>{u.estado.toUpperCase()}</Pill></td>
-                <td style={{padding:"11px 14px",fontFamily:"monospace",fontWeight:600}}>{u.clientes}/{PLANES[u.plan]?.limiteClientes}</td>
-                <td style={{padding:"11px 14px",color:C.textMid,fontSize:11}}>{u.fechaRegistro}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </Card>
-      </div>
+      )}
+
+      {modalEditar&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:32,width:460}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+              <h3 style={{margin:0,fontSize:18,fontWeight:800}}>Editar Contador</h3>
+              <button onClick={()=>setModalEditar(null)} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,padding:"14px",background:C.surface,borderRadius:10}}>
+              <Avatar nombre={modalEditar.nombre} size={44} color={planColor(modalEditar.plan)}/>
+              <div><div style={{fontWeight:800,fontSize:16}}>{modalEditar.nombre}</div><div style={{color:C.textMid,fontSize:13}}>{modalEditar.email}</div></div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:8}}>Cambiar Plan</label>
+              <div style={{display:"flex",gap:8}}>
+                {Object.values(PLANES).map(p=>(
+                  <button key={p.id} onClick={()=>setModalEditar(m=>({...m,plan:p.id}))}
+                    style={{flex:1,padding:"10px 6px",background:modalEditar.plan===p.id?p.color+"20":C.surface,border:`1.5px solid ${modalEditar.plan===p.id?p.color:C.border}`,borderRadius:9,cursor:"pointer",textAlign:"center",fontFamily:"inherit"}}>
+                    <div style={{fontSize:14,marginBottom:2}}>{p.icon}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:modalEditar.plan===p.id?p.color:C.textMid}}>{p.nombre}</div>
+                    <div style={{fontSize:10,color:C.textDim}}>Q{p.precio}/mes</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{marginBottom:20}}>
+              <label style={{display:"block",fontSize:10,color:C.textMid,letterSpacing:0.8,textTransform:"uppercase",marginBottom:8}}>Estado</label>
+              <div style={{display:"flex",gap:8}}>
+                {[["activo","Activo",C.accent],["suspendido","Suspendido",C.red],["trial","Trial",C.gold]].map(([v,l,c])=>(
+                  <button key={v} onClick={()=>setModalEditar(m=>({...m,estado:v}))}
+                    style={{flex:1,padding:"9px",background:modalEditar.estado===v?c+"20":C.surface,border:`1.5px solid ${modalEditar.estado===v?c:C.border}`,borderRadius:9,cursor:"pointer",color:modalEditar.estado===v?c:C.textMid,fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={()=>setModalEditar(null)} color={C.textMid} full>Cancelar</Btn>
+              <Btn onClick={()=>actualizarContador(modalEditar.id,{plan:modalEditar.plan,estado:modalEditar.estado})} color={C.accent} full icon="✓">Guardar Cambios</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmacion&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+          <div style={{background:C.card,border:`1px solid ${C.red}40`,borderRadius:14,padding:32,width:360,textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:12}}>{confirmacion.accion==="eliminar"?"🗑️":"⚠️"}</div>
+            <h3 style={{margin:"0 0 8px",color:C.text}}>{confirmacion.accion==="eliminar"?"¿Eliminar contador?":"¿Suspender cuenta?"}</h3>
+            <p style={{color:C.textMid,fontSize:13,marginBottom:24}}>
+              {confirmacion.accion==="eliminar"
+                ?`Se eliminará permanentemente la cuenta de ${confirmacion.u.nombre}.`
+                :`Se suspenderá el acceso de ${confirmacion.u.nombre}. Podrás reactivarla después.`}
+            </p>
+            <div style={{display:"flex",gap:10}}>
+              <Btn color={C.textMid} onClick={()=>setConfirmacion(null)} full>Cancelar</Btn>
+              <Btn color={C.red} onClick={()=>confirmacion.accion==="eliminar"?eliminarContador(confirmacion.u.id):actualizarContador(confirmacion.u.id,{estado:"suspendido"})} full icon={confirmacion.accion==="eliminar"?"🗑":"⊘"}>
+                {confirmacion.accion==="eliminar"?"Eliminar":"Suspender"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -832,17 +1085,24 @@ function PantallaLogin({onLogin}){
 
   const handleLogin=async()=>{
     setError("");setLoading(true);
-    await new Promise(r=>setTimeout(r,800));
-    if(email==="admin@contagtpro.gt"&&password==="admin123"){onLogin({id:"0",nombre:"Carlos Méndez",email,plan:"ilimitado",rol:"admin",colegiado:"7821"});}
-    else if(email&&password.length>=4){onLogin({id:Date.now().toString(),nombre:nombre||email.split("@")[0],email,plan,rol:"contador",colegiado:colegiado||"0000"});}
-    else{setError("Credenciales incorrectas.");}
+    try{
+      const res=await fetch(`${API_URL}/api/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+      const data=await res.json();
+      if(data.ok){localStorage.setItem("token",data.token);onLogin(data.usuario);}
+      else setError(data.error||"Credenciales incorrectas");
+    }catch(e){setError("Error de conexión. Verifica tu internet.");}
     setLoading(false);
   };
 
   const handleRegistro=async()=>{
     if(!nombre||!email||!password){setError("Completa todos los campos");return;}
-    setLoading(true);await new Promise(r=>setTimeout(r,1000));
-    onLogin({id:Date.now().toString(),nombre,email,plan,rol:"contador",colegiado:colegiado||"0000"});
+    setLoading(true);
+    try{
+      const res=await fetch(`${API_URL}/api/auth/registro`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nombre,email,password,colegiado,plan})});
+      const data=await res.json();
+      if(data.ok){localStorage.setItem("token",data.token);onLogin(data.usuario);}
+      else setError(data.error||"Error al crear cuenta");
+    }catch(e){setError("Error de conexión. Verifica tu internet.");}
     setLoading(false);
   };
 
@@ -918,7 +1178,8 @@ function PantallaLogin({onLogin}){
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ContaGTPro(){
   const [usuario,setUsuario]=useState(null);
+  const handleLogout=()=>{localStorage.removeItem("token");setUsuario(null);};
   if(!usuario) return <PantallaLogin onLogin={setUsuario}/>;
-  if(usuario.rol==="admin") return <PanelAdmin usuario={usuario} onLogout={()=>setUsuario(null)}/>;
-  return <PanelContador usuario={usuario} onLogout={()=>setUsuario(null)}/>;
+  if(usuario.rol==="admin") return <PanelAdmin usuario={usuario} onLogout={handleLogout}/>;
+  return <PanelContador usuario={usuario} onLogout={handleLogout}/>;
 }
